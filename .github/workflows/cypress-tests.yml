@@ -1,0 +1,49 @@
+name: Run Cypress Tests and Send Email on Failure
+
+on:
+  schedule:
+    - cron: "0 * * * *"  
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  cypress-run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set Up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Cypress Tests
+        id: cypress
+        run: |
+          npx cypress run || echo "TEST_FAILED=true" >> $GITHUB_ENV
+
+      - name: Archive Test Artifacts (Screenshots & Videos)
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: cypress-artifacts
+          path: |
+            cypress/screenshots
+            cypress/videos
+
+      - name: Send Email on Failure
+        if: env.TEST_FAILED == 'true'
+        run: node send-email.js
+        env:
+          EMAIL: ${{ secrets.EMAIL }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          RECEIVER_EMAIL: shivateja.keerthi@nobroker.in

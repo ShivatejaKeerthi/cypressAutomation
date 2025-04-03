@@ -1,0 +1,27 @@
+{
+  "name": "cypress-auto",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test:desktop": "cypress run --env viewport=desktop",
+    "test:mobile": "cypress run --env viewport=mobile"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "cypress": "^14.2.1"
+  },
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "fs": "^0.0.1-security",
+    "multer": "^1.4.5-lts.2",
+    "nodemailer": "^6.10.0"
+  }
+}

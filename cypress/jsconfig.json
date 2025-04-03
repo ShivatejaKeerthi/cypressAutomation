@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "target": "es6",
+        "moduleResolution": "node",
+        "baseUrl": ".",
+        "paths": {
+            "cypress/*": ["node_modules/cypress/types/*"]
+        }
+    },
+    
+    "include": ["../cypress/**/*.js", "../cypress/**/*.ts", "../cypress.config.js"]
+    
+    
+}
