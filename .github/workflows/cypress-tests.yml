@@ -2,7 +2,7 @@ name: Run Cypress Tests and Send Email on Failure
 
 on:
   schedule:
-    - cron: "0 7 * * *"  # Runs every day at 7 AM Once
+    - cron: "0 7 * * *"  # Runs every day at 7 AM
   push:
     branches:
       - master
@@ -35,20 +35,13 @@ jobs:
         run: npm install
 
       - name: Ensure Cypress Binary
-        run: |
-          if [[ ! -d ~/.cache/Cypress ]]; then
-            echo "Installing Cypress binary..."
-            npx cypress install
-          fi
+        run: npx cypress install
 
-      - name: Create Forced Test File
+      - name: Verify Artifact Directories Exist
         run: |
-          mkdir -p cypress/e2e
-          echo "describe('Forced Failure', () => {
-            it('should fail to verify notifications', () => {
-              expect(true).to.be.false;
-            });
-          });" > cypress/e2e/forced-failure.cy.js
+          mkdir -p cypress/screenshots
+          mkdir -p cypress/videos
+          echo "Artifact directories created"
 
       - name: Run Cypress Tests
         id: run-cypress
@@ -66,11 +59,19 @@ jobs:
             cypress/videos/**
           retention-days: 3
 
+      - name: Debug Directory Structure
+        if: env.TEST_FAILED == 'true'
+        run: |
+          echo "Current directory structure:"
+          ls -R cypress/screenshots || echo "No screenshots directory"
+          ls -R cypress/videos || echo "No videos directory"
+
       - name: Send Failure Email
         if: env.TEST_FAILED == 'true'
         run: node .github/scripts/send-email.js
         env:
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
