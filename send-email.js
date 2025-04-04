@@ -3,12 +3,11 @@ const fs = require("fs");
 const path = require("path");
 
 // Validate env variables
-const email = process.env.EMAIL;
-const password = process.env.PASSWORD;
-const receiverEmail = process.env.RECEIVER_EMAIL;
+const requiredVars = ['EMAIL', 'PASSWORD', 'RECEIVER_EMAIL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID'];
+const missingVars = requiredVars.filter(v => !process.env[v]);
 
-if (!email || !password || !receiverEmail) {
-  console.error("❌ Missing email credentials in environment variables");
+if (missingVars.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missingVars.join(', ')}`);
   process.exit(1);
 }
 
@@ -16,8 +15,8 @@ if (!email || !password || !receiverEmail) {
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: email,
-    pass: password,
+    user: process.env.EMAIL,
+    pass: process.env.PASSWORD,
   },
 });
 
@@ -47,28 +46,44 @@ const sendFailureEmail = () => {
   const screenshotFiles = findFiles("./cypress/screenshots", [".png"]);
   const videoFiles = findFiles("./cypress/videos", [".mp4"]);
 
-  // Add screenshots and videos as attachments
+  // Add screenshots and videos as attachments (limit to 5MB each)
   [...screenshotFiles, ...videoFiles].forEach(file => {
-    attachments.push({
-      filename: path.basename(file),
-      path: file,
-    });
+    const stats = fs.statSync(file);
+    if (stats.size < 5 * 1024 * 1024) { // 5MB limit
+      attachments.push({
+        filename: path.basename(file),
+        path: file,
+      });
+    } else {
+      console.log(`ℹ️ Skipping large file: ${file} (${(stats.size/1024/1024).toFixed(2)}MB)`);
+    }
   });
 
+  const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+  
   const mailOptions = {
-    from: `Cypress Bot <${email}>`,
-    to: receiverEmail,
+    from: `Cypress Bot <${process.env.EMAIL}>`,
+    to: process.env.RECEIVER_EMAIL,
     subject: "🚨 Cypress Test Failure Detected",
     html: `
-      <h2>Cypress Test Suite Failed</h2>
+      <h2 style="color: #d73a49;">Cypress Test Failure</h2>
       <p><strong>Repository:</strong> ${process.env.GITHUB_REPOSITORY}</p>
-      <p><strong>Run URL:</strong> <a href="${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}">View Run</a></p>
+      <p><strong>Workflow Run:</strong> <a href="${runUrl}">${runUrl}</a></p>
+      
+      <h3>⚠️ Forced Test Failure Detected</h3>
+      <p>This email was triggered by the test file <code>forced-failure.cy.js</code>.</p>
+      <p><strong>Remove this file after testing notifications!</strong></p>
+      
       ${attachments.length > 0 ? `
-        <p><strong>Attachments (${attachments.length}):</strong></p>
+        <h3>Attachments (${attachments.length})</h3>
         <ul>
           ${attachments.map(file => `<li>${file.filename}</li>`).join("")}
         </ul>
       ` : "<p>No screenshots/videos were captured.</p>"}
+      
+      <p style="color: #6a737d; font-size: 0.9em;">
+        This is an automated message. Please check the workflow run for details.
+      </p>
     `,
     attachments,
   };
@@ -78,10 +93,9 @@ const sendFailureEmail = () => {
       console.error("❌ Failed to send email:", error);
       process.exit(1);
     } else {
-      console.log("📨 Email sent:", info.response);
+      console.log("✅ Email successfully sent:", info.response);
     }
   });
 };
 
-// Execute
 sendFailureEmail();

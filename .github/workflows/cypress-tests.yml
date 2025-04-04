@@ -36,6 +36,17 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Create Test File with Forced Failure
+        run: |
+          cat > cypress/e2e/forced-failure.cy.js << 'EOL'
+          describe('Forced Failure for Testing', () => {
+            it('This test intentionally fails to verify notifications', () => {
+              // Remove this entire file after testing
+              expect(true).to.be.false;
+            });
+          });
+          EOL
+
       - name: Verify Cypress Installation
         run: npx cypress verify || echo "CYPRESS_VERIFY_FAILED=true" >> $GITHUB_ENV
         continue-on-error: true
@@ -53,6 +64,9 @@ jobs:
             exit 1
           fi
         continue-on-error: true
+
+      - name: Cleanup Forced Test File
+        run: rm -f cypress/e2e/forced-failure.cy.js
 
       - name: Check for Screenshots and Videos
         if: env.TEST_FAILED == 'true'
@@ -76,9 +90,12 @@ jobs:
           if-no-files-found: ignore
 
       - name: Send Email on Test Failure
-        if: env.TEST_FAILED == 'true'  # Only for actual test failures
+        if: env.TEST_FAILED == 'true'
         run: node send-email.js
         env:
           EMAIL: ${{ secrets.EMAIL }}
           PASSWORD: ${{ secrets.PASSWORD }}
           RECEIVER_EMAIL: shivateja.keerthi@nobroker.in
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
