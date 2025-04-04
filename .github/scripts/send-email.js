@@ -3,8 +3,6 @@ const fs = require('fs');
 const path = require('path');
 
 console.log("Starting email notification...");
-
-// Debug: Print current working directory
 console.log("Current working directory:", process.cwd());
 
 // Verify environment variables
@@ -28,15 +26,15 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Improved attachment collection with error handling
-const getAttachments = () => {
+// Only include failed test artifacts
+const getFailedTestAttachments = () => {
   const attachments = [];
   const artifactPaths = [
     { path: path.join(process.cwd(), 'cypress', 'screenshots'), type: 'image/png' },
     { path: path.join(process.cwd(), 'cypress', 'videos'), type: 'video/mp4' }
   ];
 
-  console.log("Scanning for artifacts...");
+  console.log("Scanning for failed test artifacts...");
 
   artifactPaths.forEach(({ path: dirPath, type }) => {
     try {
@@ -45,20 +43,23 @@ const getAttachments = () => {
         const files = fs.readdirSync(dirPath);
         
         files.forEach(file => {
-          const fullPath = path.join(dirPath, file);
-          try {
-            const stat = fs.statSync(fullPath);
-            
-            if (stat.isFile() && stat.size < 10 * 1024 * 1024) {
-              console.log(`- Adding attachment: ${file}`);
-              attachments.push({
-                filename: file,
-                path: fullPath,
-                contentType: type
-              });
+          // Only include files from failed tests (contains "failed" in name)
+          if (file.includes('failed') || file.includes('(failed)')) {
+            const fullPath = path.join(dirPath, file);
+            try {
+              const stat = fs.statSync(fullPath);
+              
+              if (stat.isFile() && stat.size < 10 * 1024 * 1024) {
+                console.log(`- Adding failed test attachment: ${file}`);
+                attachments.push({
+                  filename: file,
+                  path: fullPath,
+                  contentType: type
+                });
+              }
+            } catch (err) {
+              console.error(`⚠️ Error processing ${file}:`, err.message);
             }
-          } catch (err) {
-            console.error(`⚠️ Error processing ${file}:`, err.message);
           }
         });
       }
@@ -70,10 +71,13 @@ const getAttachments = () => {
   return attachments;
 };
 
-// Send email with error handling
 try {
-  const attachments = getAttachments();
-  console.log(`Found ${attachments.length} attachments`);
+  const attachments = getFailedTestAttachments();
+  console.log(`Found ${attachments.length} failed test artifacts`);
+
+  if (attachments.length === 0) {
+    console.log("No failed test artifacts found - sending notification without attachments");
+  }
 
   const mailOptions = {
     from: `"Cypress Alert" <${process.env.EMAIL_USER}>`,
@@ -83,7 +87,10 @@ try {
       <h2 style="color: #d93025;">Test Failure Detected</h2>
       <p><strong>Repository:</strong> ${process.env.GITHUB_REPOSITORY || 'N/A'}</p>
       <p><strong>Run URL:</strong> <a href="${process.env.GITHUB_RUN_URL}">View Details</a></p>
-      <p>${attachments.length} attachments included</p>
+      ${attachments.length > 0 ? 
+        `<p>${attachments.length} failed test artifacts attached</p>` : 
+        `<p>No artifacts available for failed tests</p>`
+      }
     `,
     attachments: attachments
   };
