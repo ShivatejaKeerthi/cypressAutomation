@@ -2,7 +2,7 @@ name: Run Cypress Tests and Send Email on Failure
 
 on:
   schedule:
-    - cron: "0 6 * * *"  # Runs every day at 6 AM Once
+    - cron: "0 7 * * *"  # Runs every day at 7 AM Once
   push:
     branches:
       - master
