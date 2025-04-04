@@ -25,30 +25,37 @@ jobs:
           node-version: 18
           cache: 'npm'
 
-      - name: Cache Cypress
+      - name: Cache Cypress and Dependencies
         uses: actions/cache@v3
         with:
           path: |
             ~/.cache/Cypress
             node_modules
           key: ${{ runner.os }}-cypress-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-cypress-
 
       - name: Install Dependencies
         run: npm install
 
+      - name: Verify Cypress Installation
+        run: npx cypress verify || echo "CYPRESS_VERIFY_FAILED=true" >> $GITHUB_ENV
+        continue-on-error: true
+
       - name: Run Cypress Tests
         id: cypress
         run: |
+          if [ "$CYPRESS_VERIFY_FAILED" = "true" ]; then
+            echo "Cypress binary missing! Check cache setup."
+            exit 1
+          fi
+          
           if ! npx cypress run; then
             echo "TEST_FAILED=true" >> $GITHUB_ENV
             exit 1
           fi
         continue-on-error: true
 
-      - name: Check for screenshots and videos
-        if: failure() || env.TEST_FAILED == 'true'
+      - name: Check for Screenshots and Videos
+        if: env.TEST_FAILED == 'true'
         run: |
           if [ -d "cypress/screenshots" ] && [ "$(ls -A cypress/screenshots 2>/dev/null)" ]; then
             echo "SCREENSHOTS_EXIST=true" >> $GITHUB_ENV
@@ -57,7 +64,7 @@ jobs:
             echo "VIDEOS_EXIST=true" >> $GITHUB_ENV
           fi
 
-      - name: Archive Test Artifacts (Screenshots & Videos)
+      - name: Archive Test Artifacts
         if: env.SCREENSHOTS_EXIST == 'true' || env.VIDEOS_EXIST == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -68,8 +75,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Send Email on Failure
-        if: failure() || env.TEST_FAILED == 'true'
+      - name: Send Email on Test Failure
+        if: env.TEST_FAILED == 'true'  # Only for actual test failures
         run: node send-email.js
         env:
           EMAIL: ${{ secrets.EMAIL }}
