@@ -2,7 +2,7 @@ name: Run Cypress Tests and Send Email on Failure
 
 on:
   schedule:
-    - cron: "0 * * * *"  
+    - cron: "0 * * * *"  # Runs every hour
   push:
     branches:
       - master
@@ -17,12 +17,23 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set Up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'npm'
+
+      - name: Cache Cypress
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/Cypress
+            node_modules
+          key: ${{ runner.os }}-cypress-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-cypress-
 
       - name: Install Dependencies
         run: npm install
@@ -30,19 +41,35 @@ jobs:
       - name: Run Cypress Tests
         id: cypress
         run: |
-          npx cypress run || echo "TEST_FAILED=true" >> $GITHUB_ENV
+          if ! npx cypress run; then
+            echo "TEST_FAILED=true" >> $GITHUB_ENV
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Check for screenshots and videos
+        if: failure() || env.TEST_FAILED == 'true'
+        run: |
+          if [ -d "cypress/screenshots" ] && [ "$(ls -A cypress/screenshots 2>/dev/null)" ]; then
+            echo "SCREENSHOTS_EXIST=true" >> $GITHUB_ENV
+          fi
+          if [ -d "cypress/videos" ] && [ "$(ls -A cypress/videos 2>/dev/null)" ]; then
+            echo "VIDEOS_EXIST=true" >> $GITHUB_ENV
+          fi
 
       - name: Archive Test Artifacts (Screenshots & Videos)
-        if: failure()
-        uses: actions/upload-artifact@v3
+        if: env.SCREENSHOTS_EXIST == 'true' || env.VIDEOS_EXIST == 'true'
+        uses: actions/upload-artifact@v4
         with:
           name: cypress-artifacts
           path: |
-            cypress/screenshots
-            cypress/videos
+            cypress/screenshots/**/*.png
+            cypress/videos/**/*.mp4
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Send Email on Failure
-        if: env.TEST_FAILED == 'true'
+        if: failure() || env.TEST_FAILED == 'true'
         run: node send-email.js
         env:
           EMAIL: ${{ secrets.EMAIL }}

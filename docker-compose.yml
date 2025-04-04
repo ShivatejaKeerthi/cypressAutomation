@@ -1,0 +1,12 @@
+services:
+  cypress:
+    build: .
+    volumes:
+      - .:/app
+      - ~/.cache/Cypress:/root/.cache/Cypress  # Properly persist Cypress binary
+    environment:
+      - EMAIL=${EMAIL}
+      - PASSWORD=${PASSWORD}
+      - RECEIVER_EMAIL=${RECEIVER_EMAIL}
+    restart: always
+    command: sh -c "npx cypress install && npx cypress run && node send-email.js"
