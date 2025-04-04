@@ -5,10 +5,7 @@ on:
     - cron: "0 * * * *"  # Runs every hour
   push:
     branches:
-      - master
-  pull_request:
-    branches:
-      - master
+      - main
   workflow_dispatch:
 
 jobs:
@@ -25,77 +22,55 @@ jobs:
           node-version: 18
           cache: 'npm'
 
-      - name: Cache Cypress and Dependencies
+      - name: Cache Cypress
         uses: actions/cache@v3
+        id: cypress-cache
         with:
           path: |
             ~/.cache/Cypress
             node_modules
-          key: ${{ runner.os }}-cypress-${{ hashFiles('**/package-lock.json') }}
+          key: cypress-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Create Test File with Forced Failure
+      - name: Ensure Cypress Binary
         run: |
-          cat > cypress/e2e/forced-failure.cy.js << 'EOL'
-          describe('Forced Failure for Testing', () => {
-            it('This test intentionally fails to verify notifications', () => {
-              // Remove this entire file after testing
+          if [[ ! -d ~/.cache/Cypress ]]; then
+            echo "Installing Cypress binary..."
+            npx cypress install
+          fi
+
+      - name: Create Forced Test File
+        run: |
+          mkdir -p cypress/e2e
+          echo "describe('Forced Failure', () => {
+            it('should fail to verify notifications', () => {
               expect(true).to.be.false;
             });
-          });
-          EOL
-
-      - name: Verify Cypress Installation
-        run: npx cypress verify || echo "CYPRESS_VERIFY_FAILED=true" >> $GITHUB_ENV
-        continue-on-error: true
+          });" > cypress/e2e/forced-failure.cy.js
 
       - name: Run Cypress Tests
-        id: cypress
+        id: run-cypress
         run: |
-          if [ "$CYPRESS_VERIFY_FAILED" = "true" ]; then
-            echo "Cypress binary missing! Check cache setup."
-            exit 1
-          fi
-          
-          if ! npx cypress run; then
-            echo "TEST_FAILED=true" >> $GITHUB_ENV
-            exit 1
-          fi
+          npx cypress run || (echo "TEST_FAILED=true" >> $GITHUB_ENV && exit 1)
         continue-on-error: true
 
-      - name: Cleanup Forced Test File
-        run: rm -f cypress/e2e/forced-failure.cy.js
-
-      - name: Check for Screenshots and Videos
-        if: env.TEST_FAILED == 'true'
-        run: |
-          if [ -d "cypress/screenshots" ] && [ "$(ls -A cypress/screenshots 2>/dev/null)" ]; then
-            echo "SCREENSHOTS_EXIST=true" >> $GITHUB_ENV
-          fi
-          if [ -d "cypress/videos" ] && [ "$(ls -A cypress/videos 2>/dev/null)" ]; then
-            echo "VIDEOS_EXIST=true" >> $GITHUB_ENV
-          fi
-
-      - name: Archive Test Artifacts
-        if: env.SCREENSHOTS_EXIST == 'true' || env.VIDEOS_EXIST == 'true'
+      - name: Upload Artifacts
+        if: failure() && (env.TEST_FAILED == 'true')
         uses: actions/upload-artifact@v4
         with:
-          name: cypress-artifacts
+          name: cypress-failure-artifacts
           path: |
-            cypress/screenshots/**/*.png
-            cypress/videos/**/*.mp4
-          retention-days: 7
-          if-no-files-found: ignore
+            cypress/screenshots/**
+            cypress/videos/**
+          retention-days: 3
 
-      - name: Send Email on Test Failure
+      - name: Send Failure Email
         if: env.TEST_FAILED == 'true'
-        run: node send-email.js
+        run: node .github/scripts/send-email.js
         env:
-          EMAIL: ${{ secrets.EMAIL }}
-          PASSWORD: ${{ secrets.PASSWORD }}
-          RECEIVER_EMAIL: shivateja.keerthi@nobroker.in
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
