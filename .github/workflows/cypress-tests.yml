@@ -2,7 +2,7 @@ name: Run Cypress Tests and Send Email on Failure
 
 on:
   schedule:
-    - cron: "0 * * * *"  # Runs every hour
+    - cron: "0 6 * * *"  # Runs every day at 6 AM Once
   push:
     branches:
       - master
@@ -13,18 +13,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout code
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js with caching
       - name: Set Up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
           cache: 'npm'
 
-      # 3. Cache Cypress binary and dependencies
       - name: Cache Cypress
         uses: actions/cache@v3
         id: cypress-cache
@@ -34,15 +31,16 @@ jobs:
             node_modules
           key: cypress-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
 
-      # 4. Install dependencies
       - name: Install Dependencies
         run: npm install
 
-      # 5. Ensure Cypress binary exists
-      - name: Verify Cypress Installation
-        run: npx cypress verify
+      - name: Ensure Cypress Binary
+        run: |
+          if [[ ! -d ~/.cache/Cypress ]]; then
+            echo "Installing Cypress binary..."
+            npx cypress install
+          fi
 
-      # 6. Create test file with forced failure (for testing)
       - name: Create Forced Test File
         run: |
           mkdir -p cypress/e2e
@@ -52,16 +50,14 @@ jobs:
             });
           });" > cypress/e2e/forced-failure.cy.js
 
-      # 7. Run Cypress tests
       - name: Run Cypress Tests
         id: run-cypress
         run: |
           npx cypress run || (echo "TEST_FAILED=true" >> $GITHUB_ENV && exit 1)
         continue-on-error: true
 
-      # 8. Upload artifacts if tests failed
       - name: Upload Artifacts
-        if: failure() && env.TEST_FAILED == 'true'
+        if: failure() && (env.TEST_FAILED == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: cypress-failure-artifacts
@@ -70,21 +66,11 @@ jobs:
             cypress/videos/**
           retention-days: 3
 
-      # 9. Send email notification (FIXED VERSION)
       - name: Send Failure Email
         if: env.TEST_FAILED == 'true'
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "Script contents:"
-          cat .github/scripts/send-email.js
-          node .github/scripts/send-email.js
+        run: node .github/scripts/send-email.js
         env:
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-
-      # 10. Cleanup forced test file
-      - name: Cleanup Forced Test File
-        run: rm -f cypress/e2e/forced-failure.cy.js
